@@ -1,0 +1,16 @@
+.env
+*.sqlite3
+*.sqlite3-*
+__pycache__/
+*.py[cod]
+.venv/
+resume.txt
+jobs.local.json
+settings.local.json
+profile.txt
+*settings*
+*.xlsx
+*.html
+sample/
+*.journal
+!settings.example.json

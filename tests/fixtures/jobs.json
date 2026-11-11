@@ -1,0 +1,156 @@
+[
+  {
+    "source": "fixture-sample",
+    "source_id": "a1",
+    "company": "ParcelWorks Demo",
+    "title": "Senior Product Manager, Fulfillment Platform",
+    "url": "https://parcelworks.example/jobs/fulfillment-pm?utm_source=demo",
+    "location": "Remote — US including California",
+    "work_mode": "remote",
+    "remote_ca": true,
+    "office_coordinates": null,
+    "base": {
+      "minimum": 220000,
+      "maximum": 250000
+    },
+    "total": {
+      "minimum": 265000,
+      "maximum": 315000
+    },
+    "description": "Own the e-commerce fulfillment roadmap and launch merchant-facing APIs and integrations. Set product strategy and KPIs with cross-functional stakeholders."
+  },
+  {
+    "source": "fixture-sample-mirror",
+    "source_id": "mirror-a1",
+    "company": "ParcelWorks Demo",
+    "title": "Senior Product Manager, Fulfillment Platform",
+    "url": "https://parcelworks.example/jobs/fulfillment-pm?utm_medium=demo#description",
+    "location": "Remote — US including California",
+    "work_mode": "remote",
+    "remote_ca": true,
+    "office_coordinates": null,
+    "base": {
+      "minimum": 220000,
+      "maximum": 250000
+    },
+    "total": {
+      "minimum": 265000,
+      "maximum": 315000
+    },
+    "description": "Own the e-commerce fulfillment roadmap and launch merchant-facing APIs and integrations. Set product strategy and KPIs with cross-functional stakeholders."
+  },
+  {
+    "source": "fixture-sample",
+    "source_id": "b1",
+    "company": "Riverline Commerce Demo",
+    "title": "Director of Product Management",
+    "url": "https://riverline.example/jobs/product-director",
+    "location": "Tracy, CA",
+    "work_mode": "hybrid",
+    "remote_ca": null,
+    "office_coordinates": [
+      37.7397,
+      -121.4252
+    ],
+    "base": {
+      "minimum": 235000,
+      "maximum": 275000
+    },
+    "total": {
+      "minimum": 300000,
+      "maximum": 365000
+    },
+    "description": "Lead a team of product managers and drive cross-functional alignment. Set the roadmap for marketplace fulfillment, API integrations, and product discovery."
+  },
+  {
+    "source": "fixture-sample",
+    "source_id": "c1",
+    "company": "CartSignal Demo",
+    "title": "Sr. Product Manager — Merchant Integrations",
+    "url": "https://cartsignal.example/jobs/merchant-integrations",
+    "location": "Remote — California eligible",
+    "work_mode": "remote",
+    "remote_ca": true,
+    "office_coordinates": null,
+    "base": {
+      "minimum": 185000,
+      "maximum": 235000
+    },
+    "total": {
+      "minimum": 240000,
+      "maximum": 290000
+    },
+    "description": "Prioritize the roadmap for e-commerce integration APIs and define launch metrics."
+  },
+  {
+    "source": "fixture-sample",
+    "source_id": "d1",
+    "company": "FulfillHub Demo",
+    "title": "Senior Product Manager",
+    "url": "https://fulfillhub.example/jobs/remote",
+    "location": "Remote — US (state eligibility unspecified)",
+    "work_mode": "remote",
+    "remote_ca": null,
+    "office_coordinates": null,
+    "base": null,
+    "total": null,
+    "description": "Drive the fulfillment platform roadmap and build APIs for inventory integrations."
+  },
+  {
+    "source": "fixture-sample",
+    "source_id": "e1",
+    "company": "Pacific Network Demo",
+    "title": "Director, Product Management",
+    "url": "https://pacificnet.example/jobs/product-director",
+    "location": "San Francisco, CA",
+    "work_mode": "hybrid",
+    "remote_ca": null,
+    "office_coordinates": [
+      37.7749,
+      -122.4194
+    ],
+    "base": {
+      "minimum": 250000,
+      "maximum": 290000
+    },
+    "total": null,
+    "description": "Set product strategy for a marketplace."
+  },
+  {
+    "source": "fixture-sample",
+    "source_id": "f1",
+    "company": "ShipShift Demo",
+    "title": "Senior Product Manager",
+    "url": "https://shipshift.example/jobs/pm",
+    "location": "Remote — California eligible",
+    "work_mode": "remote",
+    "remote_ca": true,
+    "office_coordinates": null,
+    "base": {
+      "minimum": 175000,
+      "maximum": 200000
+    },
+    "total": {
+      "minimum": 225000,
+      "maximum": 260000
+    },
+    "description": "Lead the e-commerce fulfillment roadmap and platform integrations."
+  },
+  {
+    "source": "fixture-sample",
+    "source_id": "g1",
+    "company": "Ledgerleaf Demo",
+    "title": "Product Marketing Manager",
+    "url": "https://ledgerleaf.example/jobs/marketing",
+    "location": "Remote — California eligible",
+    "work_mode": "remote",
+    "remote_ca": true,
+    "office_coordinates": null,
+    "base": {
+      "minimum": 205000,
+      "maximum": 225000
+    },
+    "total": null,
+    "description": "Lead product marketing for an e-commerce platform."
+  }
+]
