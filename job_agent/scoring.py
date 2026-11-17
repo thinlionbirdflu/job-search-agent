@@ -256,12 +256,30 @@ def anthropic_fit(profile: str, posting: str, key: str, model: str, rubric: dict
     excerpt = {"profile": profile[:16_000], "posting": posting[:20_000]}
     labels = {name: dimension.label for name, dimension in rubric.items()}
     schema = object_schema(dict.fromkeys(rubric, EVIDENCE_SCHEMA))
+    # Cache the system instructions and the profile text: both are identical on every call for this
+    # resume, so marking them with cache_control lets Anthropic reuse that prefix instead of
+    # re-billing it as fresh input on each posting. Only the posting (which changes every call) and
+    # the rubric labels are sent uncached. A prefix below Anthropic's minimum cacheable length is
+    # simply not cached -- this never breaks the request.
+    # Sonnet 5.5 cannot disable its thinking step, and forced tool use is rejected while thinking is on --
+    # for that model (and only that model) tool_choice must be "auto", with the system prompt telling it to
+    # call the tool anyway. Every other model gets the tool forced, which is more reliable: left on "auto",
+    # a model may answer in plain text instead of calling the tool, and that response is correctly rejected
+    # below -- but it then counts as a failed call and falls back to local scoring for no real reason.
+    needs_auto_tool_choice = "sonnet-5-5" in model
+    tool_choice = {"type": "auto"} if needs_auto_tool_choice else {"type": "tool", "name": ANTHROPIC_TOOL}
+    system_text = INSTRUCTIONS + (f"\n\nAnswer only by calling the {ANTHROPIC_TOOL} tool."
+                                   if needs_auto_tool_choice else "")
     response = get_json(ANTHROPIC_URL, payload={
-        "model": model, "max_tokens": 2000, "system": INSTRUCTIONS,
-        "messages": [{"role": "user", "content": json.dumps({"rubric": labels, **excerpt}, ensure_ascii=False)}],
+        "model": model, "max_tokens": 2000,
+        "system": [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": f"Profile:\n{excerpt['profile']}", "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": json.dumps({"rubric": labels, "posting": excerpt["posting"]}, ensure_ascii=False)},
+        ]}],
         "tools": [{"name": ANTHROPIC_TOOL, "description": "Record the rubric rating and quotes for this job.",
                    "input_schema": schema}],
-        "tool_choice": {"type": "tool", "name": ANTHROPIC_TOOL},
+        "tool_choice": tool_choice,
     }, extra_headers={"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION})
     if response.get("stop_reason") != "tool_use":
         raise ValueError("Model response did not complete")
