@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
 import os
@@ -73,22 +74,40 @@ def run(args, tracker: Tracker) -> int:
     skipped = 0
     skipped_titles = 0
     successful = failed = 0
-    for spec in ([] if args.from_db else settings.sources):
+    specs = [] if args.from_db else settings.sources
+    # Sources are independent network calls to a handful of shared hosts (one host per board type
+    # serves every company on that board), so they are fetched concurrently rather than one at a
+    # time -- a serial run of ~500 sources at up to 25s each could take the better part of an hour.
+    # A bounded worker count keeps this from hammering any one host with hundreds of simultaneous
+    # requests; get_json's own retry/backoff (including on 429) absorbs the rate-limit responses
+    # that concurrency makes more likely.
+    SOURCE_WORKERS = 16
+
+    def fetch(spec):
         try:
-            jobs, priority = discover(spec, settings.directory)
+            return spec, discover(spec, settings.directory), None
         except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
-            label = spec.get("path") or spec.get("board") or spec.get("title") or spec.get("type", "unknown")
-            warning(f"Source {label} failed: {exc}")
-            failed += 1
-            continue
-        retrieved += len(jobs)
-        skipped += sum(not job.is_live_us() for job in jobs)
-        # Keep only postings whose title matches a configured role, so non-product jobs are never stored.
-        title_ok = [job for job in jobs
-                    if evaluate(job, settings.policy).checks["title"].state == "pass"]
-        skipped_titles += len(jobs) - len(title_ok)
-        records.extend((job, priority) for job in title_ok if not job.is_demo())
-        successful += 1
+            return spec, None, exc
+
+    with ThreadPoolExecutor(max_workers=min(SOURCE_WORKERS, len(specs)) or 1) as pool:
+        # map() preserves input order, so aggregation below is deterministic even though the
+        # underlying fetches complete in whatever order the network returns them.
+        results = pool.map(fetch, specs) if specs else []
+        for spec, outcome, exc in results:
+            if exc is not None:
+                label = spec.get("path") or spec.get("board") or spec.get("title") or spec.get("type", "unknown")
+                warning(f"Source {label} failed: {exc}")
+                failed += 1
+                continue
+            jobs, priority = outcome
+            retrieved += len(jobs)
+            skipped += sum(not job.is_live_us() for job in jobs)
+            # Keep only postings whose title matches a configured role, so non-product jobs are never stored.
+            title_ok = [job for job in jobs
+                        if evaluate(job, settings.policy).checks["title"].state == "pass"]
+            skipped_titles += len(jobs) - len(title_ok)
+            records.extend((job, priority) for job in title_ok if not job.is_demo())
+            successful += 1
     if not successful and not args.from_db:
         warning("No source completed.")
         return 1

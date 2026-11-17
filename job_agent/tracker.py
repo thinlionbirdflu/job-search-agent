@@ -54,8 +54,6 @@ class Tracker:
         self.db = sqlite3.connect(path, timeout=10)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
-        self.db.create_function("is_live_us", 1, lambda payload: Job.from_dict(json.loads(payload)).is_live_us(),
-                                deterministic=True)
         self.db.executescript(SCHEMA)
         self._add_score_columns()
         self._upgrade_classifications()
@@ -98,8 +96,16 @@ class Tracker:
                     ids.add(self._upsert(job, priority))
                 except IdentityConflict as exc:
                     conflicts.append(str(exc))
-            rows = [self.db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-                    for job_id in sorted(ids)]
+            # One round trip for every touched row, not one query per id: ingest() can touch
+            # hundreds to thousands of rows in a single live-board run.
+            ordered = sorted(ids)
+            if ordered:
+                placeholders = ",".join("?" * len(ordered))
+                by_id = {row["id"]: row for row in
+                         self.db.execute(f"SELECT * FROM jobs WHERE id IN ({placeholders})", ordered)}
+                rows = [by_id[job_id] for job_id in ordered]
+            else:
+                rows = []
         return rows, conflicts
 
     def _upsert(self, job: Job, priority: int) -> int:
@@ -167,9 +173,12 @@ class Tracker:
         return state if result.rowcount == 1 else None
 
     def list_jobs(self, state: str, status: str | None, limit: int = -1):
+        # No per-row payload deserialization here: is_live_us() is already baked into state
+        # ("excluded" is terminal for it), so re-deriving it from the JSON on every row -- and
+        # re-parsing the same JSON a second time in the caller to actually use the row -- bought
+        # nothing but cost, on every list and every export.
         return self.db.execute(
             """SELECT * FROM jobs WHERE (? = 'all' OR state = ?) AND (? IS NULL OR status = ?)
-               AND is_live_us(payload)
                ORDER BY CASE state WHEN 'eligible' THEN 0 WHEN 'review' THEN 1
                         WHEN 'rejected' THEN 2 WHEN 'pending' THEN 3 ELSE 4 END,
                         score DESC, id LIMIT ?""",
