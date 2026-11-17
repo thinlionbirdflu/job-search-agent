@@ -24,15 +24,27 @@ def get_json(url: str, *, payload=None, api_key=None, extra_headers=None):
         headers["Authorization"] = f"Bearer {api_key}"
     headers.update(extra_headers or {})
     request = Request(url, data=data, headers=headers)
-    # Retry read-only discovery requests on timeouts and server errors. Model calls (payload set) never retry.
+    # Retry read-only discovery requests on timeouts, rate limits, and server errors. Model calls
+    # (payload set) never retry. A handful of shared hosts (one per board type: Greenhouse, Ashby,
+    # Lever) field requests for every configured board, so a 429 here is an ordinary, expected
+    # outcome under concurrent fetching, not a permanent failure -- it gets the same retry/backoff
+    # as a 5xx instead of being raised immediately.
     attempts = 3 if payload is None else 1
     for attempt in range(attempts):
         try:
             with urlopen(request, timeout=25) as response:
                 return json.load(response)
         except HTTPError as exc:
-            if exc.code < 500 or attempt == attempts - 1:
+            retryable = exc.code == 429 or exc.code >= 500
+            if not retryable or attempt == attempts - 1:
                 raise
+            retry_after = exc.headers.get("Retry-After") if exc.headers else None
+            if retry_after is not None:
+                try:
+                    time.sleep(max(0.0, float(retry_after)))
+                    continue
+                except ValueError:
+                    pass
         except (TimeoutError, URLError):
             if attempt == attempts - 1:
                 raise
