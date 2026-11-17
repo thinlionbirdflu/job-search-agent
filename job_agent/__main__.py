@@ -10,7 +10,7 @@ import sqlite3
 import sys
 
 from .config import Settings, load_env
-from .filters import evaluate
+from .filters import Check, Eligibility, evaluate
 from .models import Job
 from .scoring import RUBRICS, estimate_ats, local_fit, score_job
 
@@ -29,12 +29,25 @@ def warning(message: str):
     print(f"Warning: {single_line(message)}", file=sys.stderr)
 
 
-def reuse_stored_fit(stored, *, ai_requested: bool, rescore: bool) -> bool:
+def reuse_stored_fit(stored, *, ai_requested: bool, rescore: bool, retry_fallbacks: bool = False,
+                      rescore_min_score: float | None = None) -> bool:
     # Keep AI results (and failed-AI fallbacks) so reruns don't spend model calls again.
     # A plain run without --ai also keeps them, instead of overwriting them with local scores.
-    if rescore or not stored:
+    # --retry-fallbacks sends only the keyword-fallback postings back to the AI.
+    if not stored:
         return False
-    return stored.get("method") in ("ai", "local_fallback")
+    method = stored.get("method")
+    if not rescore:
+        if method == "local_fallback":
+            return not retry_fallbacks
+        return method == "ai"
+    # --rescore-ai with --rescore-min-score: keep (don't re-spend a call on) an existing AI score
+    # that already cleared the given bar, and still rescore everything else (fallbacks, local-only,
+    # and AI scores below the bar).
+    if method == "ai" and rescore_min_score is not None:
+        score = stored.get("score")
+        return isinstance(score, (int, float)) and score >= rescore_min_score
+    return False
 
 
 def run(args, tracker: Tracker) -> int:
@@ -60,7 +73,7 @@ def run(args, tracker: Tracker) -> int:
     skipped = 0
     skipped_titles = 0
     successful = failed = 0
-    for spec in settings.sources:
+    for spec in ([] if args.from_db else settings.sources):
         try:
             jobs, priority = discover(spec, settings.directory)
         except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
@@ -76,23 +89,42 @@ def run(args, tracker: Tracker) -> int:
         skipped_titles += len(jobs) - len(title_ok)
         records.extend((job, priority) for job in title_ok if not job.is_demo())
         successful += 1
-    if not successful:
+    if not successful and not args.from_db:
         warning("No source completed.")
         return 1
 
-    rows, conflicts = tracker.ingest(records)
+    if args.from_db:
+        rows, conflicts = tracker.db.execute("SELECT * FROM jobs ORDER BY id").fetchall(), []
+    else:
+        rows, conflicts = tracker.ingest(records)
     for conflict in conflicts:
         warning(f"Identity conflict: {conflict}. Check the input IDs and URLs.")
     counts = Counter()
     stale = 0
+    not_live = 0
     for row in rows:
         job = Job.from_dict(json.loads(row["payload"]))
         if not job.is_live_us():
+            # Resolve this once instead of leaving it "pending": every run (especially --from-db, which
+            # scans the whole table) was re-loading and re-checking these rows from scratch forever,
+            # because skipping them here never recorded a terminal state for them to short-circuit on.
+            reason = ("Sample/demo posting, not a real job" if job.is_demo() else
+                      "Not confirmed as a live U.S. posting (non-U.S. location, or remote-eligibility "
+                      "and location data missing or unresolved)")
+            eligibility = Eligibility("excluded", {"listing": Check("fail", reason)})
+            state = tracker.save_evaluation(row["id"], row["revision"], eligibility, None)
+            if state is None:
+                warning(f"Job {row['id']} changed during scoring. Run again to evaluate it.")
+                stale += 1
+            else:
+                counts[state] += 1
+                not_live += 1
             continue
         eligibility = evaluate(job, settings.policy)
         stored = json.loads(row["fit"]) if row["fit"] else None
         if eligibility.state != "excluded" and reuse_stored_fit(
-                stored, ai_requested=args.ai, rescore=args.rescore_ai):
+                stored, ai_requested=args.ai, rescore=args.rescore_ai,
+                retry_fallbacks=args.retry_fallbacks, rescore_min_score=args.rescore_min_score):
             state = tracker.refresh_eligibility(row["id"], row["revision"], eligibility, stored)
             if state is None:
                 warning(f"Job {row['id']} changed during scoring. Run again to evaluate it.")
@@ -135,6 +167,8 @@ def run(args, tracker: Tracker) -> int:
     if skipped_titles:
         print(f"Skipped {skipped_titles} postings whose titles are not configured product roles.")
     print(" | ".join(f"{counts[state]} {state}" for state in STATES if state != "pending"))
+    if not_live:
+        print(f"Resolved {not_live} non-U.S./demo posting(s) that were stuck pending; they won't be rechecked again.")
     if counts["local_fallback"]:
         print(f"{counts['local_fallback']} AI assessment(s) used local fallback.")
     if args.excel:
@@ -181,6 +215,12 @@ def main(argv=None) -> int:
     scan.add_argument("--ai-limit", type=positive, help="Maximum new AI calls this run; the rest use local scoring")
     scan.add_argument("--rescore-ai", action="store_true",
                       help="Call the AI again for jobs that already have an AI or fallback assessment")
+    scan.add_argument("--rescore-min-score", type=float,
+                      help="With --rescore-ai, keep (skip re-scoring) existing AI scores at or above this value")
+    scan.add_argument("--from-db", action="store_true",
+                      help="Score the jobs already in the database without reading any job board")
+    scan.add_argument("--retry-fallbacks", action="store_true",
+                      help="Send postings that fell back to keyword scoring back to the AI; keep other stored scores")
     scan.add_argument("--excel", type=Path, help="Refresh an Excel workbook after the scan")
     export = commands.add_parser("export", help="Write all tracked jobs to an Excel workbook")
     export.add_argument("excel", nargs="?", type=Path, default=Path("job-results.xlsx"))
